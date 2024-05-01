@@ -1,24 +1,126 @@
 # Pretty print
 from pprint import pprint
-from datasets import load_dataset
-from transformers import AutoTokenizer
-tokenizer = AutoTokenizer.from_pretrained('distilbert-base-uncased')
-from torch.utils.data import DataLoader
 from PIL import Image as PILImage
 from dataclasses import dataclass
 from typing import List, Dict
 import base64
 from mimetypes import guess_type
+import json
+import math
+from PIL import Image
+import urllib
+import os
+import io
 
 @dataclass
 class PatentData:
     text: str
     image: PILImage
-    label: int
+    label: str
+    model_output: str
     messages: any
+    model_type: str
+    
+def load_image_from_url(url: str) -> PILImage:
+    try:
+        response = urllib.request.urlopen(url)
+        image = PILImage.open(response)
+        return image
+    except Exception as e:
+        return None
 
-def to_patent_data(data):
-    return PatentData(data["text"], data["image"], data["label"], data["messages"])
+def image_collage(images: List[str]) -> PILImage:
+    """
+    Collage multiple images into a single image.
+    """
+    # Load the images
+    def load_image(image):
+        if "http" in image:
+            return load_image_from_url(image)
+        try:
+            return PILImage.open(image)
+        except:
+            return None
+    images = [load_image(image) for image in images]
+    images = [image for image in images if image is not None]
+    collage = create_collage(images)
+    
+    return collage
+    
+
+def to_patent_data(data, model_type: str, prefer_local=False):
+    # print(data["cpc_labels"])
+    target = data["ipc_label"][:4]
+    
+    def get_folder_path_from_file(file: str) -> str:
+        temp_folder = ''
+        for i in range(4):
+            temp_folder += file[i*3:(i+1)*3] + '/'
+        folder = os.path.join(temp_folder, file)
+        return folder
+    image_urls = json.loads(data["image_urls"])
+    if prefer_local:
+        image_url_names = [get_folder_path_from_file(url.split('/')[-1]) for url in image_urls]
+        image_urls = [f"images/data/{name}" for name in image_url_names]
+    
+    return PatentData(
+        text= data["abstract"],
+        image = image_collage(image_urls),
+        label = target,
+        model_type=model_type,
+        model_output=None,
+        messages=None
+    )
+
+def loss_function():
+    pass
+
+def concat_images_dp(images):
+    # TODO: finish this algorithm later
+    dp = [[0] * len(images) for _ in range(len(images))]
+    
+def create_collage(image_list):
+    # Find the number of images
+    if len(image_list) == 0:
+        # return empty 480 x 480 image
+        return Image.new('RGB', (480, 480))
+    
+    num_images = len(image_list)
+
+    # Calculate the number of rows and columns for the collage
+    rows = math.ceil(math.sqrt(num_images))
+    cols = math.ceil(num_images / rows)
+
+    # Find the smallest image, and save its size
+    min_img_width = min_img_height = float('inf')
+    for image in image_list:
+        if image.size[0] < min_img_width:
+            min_img_width = image.size[0]
+        if image.size[1] < min_img_height:
+            min_img_height = image.size[1]
+
+    # Create a new image that will be the collage
+    collage_width = cols * min_img_width
+    collage_height = rows * min_img_height
+    collage = Image.new('RGB', (collage_width, collage_height))
+
+    # Iterate over the images and paste them into the collage
+    for index, image in enumerate(image_list):
+        # Calculate the position in the collage where the image will be pasted
+        pos_x = (index % cols) * min_img_width
+        pos_y = (index // cols) * min_img_height
+
+        # Resize the image and paste it into the collage
+        image = image.resize((min_img_width, min_img_height))
+        collage.paste(image, (pos_x, pos_y))
+    
+    # resize to at most 3000x3000, KEEP ASPECT RATIO
+    max_size = 3000
+    if collage.size[0] > max_size or collage.size[1] > max_size:
+        collage.thumbnail((max_size, max_size))
+    
+
+    return collage
 
 
 def concat_images(images):
@@ -41,14 +143,15 @@ def concat_images(images):
     return to_return
   
 
-def PIL_image_to_data_url(image):
+def PIL_image_to_data_url(image, return_formatted=True, image_format="png"):
     # Save the image to a temporary file io.BytesIO object
     temp_file = io.BytesIO()
-    image.save(temp_file, format="PNG")
+    image.save(temp_file, format=image_format.upper())
     # Encode the image file into a data URL
-    mime_type = "image/png"
+    mime_type = "image/"+image_format
     base64_encoded_data = base64.b64encode(temp_file.getvalue()).decode('utf-8')
-    return f"data:{mime_type};base64,{base64_encoded_data}"
+    if return_formatted: return f"data:{mime_type};base64,{base64_encoded_data}"
+    else: return base64_encoded_data
 
 def generate_prompt_openai(data: PatentData):
     """
@@ -57,7 +160,7 @@ def generate_prompt_openai(data: PatentData):
     Note that the data object is modified in place.
     """
     messages = [
-        { "role": "user", "content": "Classify the following patent into a class in the International Patent Classification system. Answer with the a 4-character IPC class."},
+        { "role": "user", "content": "Classify the following patent into a class in the International Patent Classification system. Answer with the a 4-character IPC class, do not answer with anything else"},
         { "role": "user", "content": [  
             { 
                 "type": "text", 
@@ -83,6 +186,27 @@ def generate_prompt_gemini(data: PatentData):
     messages = [
         data.image, # note that PIL images are supported here somehow
         "Classify the following patent into a class in the International Patent Classification system. Answer with the a 4-character IPC class.\n" + data.text
+    ]
+    data.messages = messages
+    return messages
+
+def generate_prompt_claude(data: PatentData):
+    messages = [
+        # { "role": "user", "content": },
+        { "role": "user", "content": [  
+            { 
+                "type": "text", 
+                "text": "Classify the following patent into a class in the International Patent Classification system. Answer with the a 4-character IPC class. Do not answer with anything else, just the 4-character class.\n"+data.text
+            },
+            { 
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": PIL_image_to_data_url(data.image, return_formatted=False, image_format="jpeg"),
+                },
+            }
+        ] } 
     ]
     data.messages = messages
     return messages

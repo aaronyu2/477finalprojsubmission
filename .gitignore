@@ -1,0 +1,5 @@
+images/data
+hf_cache
+data/hupd*
+.conda
+__pycache__

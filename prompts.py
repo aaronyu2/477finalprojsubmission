@@ -11,7 +11,13 @@ from PIL import Image
 import urllib
 import os
 import io
+from typing import Optional
+import uuid
 
+
+TEXT_IMAGE = 0
+TEXT_ONLY = 1
+IMAGE_ONLY = 2
 @dataclass
 class PatentData:
     text: str
@@ -20,6 +26,10 @@ class PatentData:
     model_output: str
     messages: any
     model_type: str
+    mode: int    
+    original_images: Optional[List[str]] = None
+    original_data_obj: Optional[Dict] = None
+
     
 def load_image_from_url(url: str) -> PILImage:
     try:
@@ -46,9 +56,15 @@ def image_collage(images: List[str]) -> PILImage:
     collage = create_collage(images)
     
     return collage
-    
 
-def to_patent_data(data, model_type: str, prefer_local=False):
+
+
+def to_patent_data(data,
+                   model_type: str,
+                   prefer_local=False,
+                   mode = TEXT_IMAGE,
+                   include_original_data=False
+    ):
     # print(data["cpc_labels"])
     target = data["ipc_label"][:4]
     
@@ -62,15 +78,23 @@ def to_patent_data(data, model_type: str, prefer_local=False):
     if prefer_local:
         image_url_names = [get_folder_path_from_file(url.split('/')[-1]) for url in image_urls]
         image_urls = [f"images/data/{name}" for name in image_url_names]
-    
-    return PatentData(
+    # print(image_urls)
+    if mode == IMAGE_ONLY and len(image_urls) == 0:
+        return None
+    # print(mode, mode == TEXT_IMAGE, mode == IMAGE_ONLY)
+    ret =  PatentData(
         text= data["abstract"],
-        image = image_collage(image_urls),
+        image = image_collage(image_urls) if (mode == TEXT_IMAGE or mode == IMAGE_ONLY) else None,
         label = target,
         model_type=model_type,
         model_output=None,
-        messages=None
+        messages=None,
+        mode=mode
     )
+    if include_original_data:
+        ret.original_data_obj = data
+        ret.original_images = image_urls
+    return ret
 
 def loss_function():
     pass
@@ -159,21 +183,25 @@ def generate_prompt_openai(data: PatentData):
         messages: list to use as input to client.chat.completions.create()
     Note that the data object is modified in place.
     """
+    
     messages = [
         { "role": "user", "content": "Classify the following patent into a class in the International Patent Classification system. Answer with the a 4-character IPC class, do not answer with anything else"},
-        { "role": "user", "content": [  
-            { 
-                "type": "text", 
-                "text": data.text
-            },
-            { 
-                "type": "image_url",
-                "image_url": {
-                    "url": PIL_image_to_data_url(data.image)
-                }
-            }
-        ] } 
     ]
+    mode = data.mode
+    prompt_block = []
+    if mode == TEXT_IMAGE or mode == TEXT_ONLY:
+        prompt_block.append({ 
+            "type": "text", 
+            "text": data.text
+        })
+    if mode == TEXT_IMAGE or mode == IMAGE_ONLY:
+        prompt_block.append({ 
+            "type": "image_url",
+            "image_url": {
+                "url": PIL_image_to_data_url(data.image)
+            }
+        })
+    messages.append({ "role": "user", "content": prompt_block })
     data.messages = messages
     return messages
 
@@ -191,22 +219,28 @@ def generate_prompt_gemini(data: PatentData):
     return messages
 
 def generate_prompt_claude(data: PatentData):
-    messages = [
-        # { "role": "user", "content": },
-        { "role": "user", "content": [  
-            { 
-                "type": "text", 
-                "text": "Classify the following patent into a class in the International Patent Classification system. Answer with the a 4-character IPC class. Do not answer with anything else, just the 4-character class.\n"+data.text
+    
+    mode = data.mode
+    prompt_block = [{ 
+        "type": "text", 
+        "text": "Classify the following patent into a class in the International Patent Classification system. Answer with the a 4-character IPC class. Do not answer with anything else, just the 4-character class.\n"
+    }]
+    if mode == TEXT_IMAGE or mode == TEXT_ONLY:
+        prompt_block.append({ 
+            "type": "text", 
+            "text": data.text
+        })
+    if mode == TEXT_IMAGE or mode == IMAGE_ONLY:
+        prompt_block.append({ 
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/jpeg",
+                "data": PIL_image_to_data_url(data.image, return_formatted=False, image_format="jpeg"),
             },
-            { 
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/jpeg",
-                    "data": PIL_image_to_data_url(data.image, return_formatted=False, image_format="jpeg"),
-                },
-            }
-        ] } 
+        })
+    messages = [
+        { "role": "user", "content": prompt_block} 
     ]
     data.messages = messages
     return messages

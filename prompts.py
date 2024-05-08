@@ -81,7 +81,7 @@ def to_patent_data(data,
     # print(image_urls)
     if mode == IMAGE_ONLY and len(image_urls) == 0:
         return None
-    # print(mode, mode == TEXT_IMAGE, mode == IMAGE_ONLY)
+    # print(mode, (mode == TEXT_IMAGE or mode == IMAGE_ONLY), image_urls)
     ret =  PatentData(
         text= data["abstract"],
         image = image_collage(image_urls) if (mode == TEXT_IMAGE or mode == IMAGE_ONLY) else None,

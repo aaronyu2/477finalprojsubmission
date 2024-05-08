@@ -3,3 +3,4 @@ hf_cache
 data/hupd*
 .conda
 __pycache__
+finetuning/data

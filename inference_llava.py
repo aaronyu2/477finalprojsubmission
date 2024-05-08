@@ -28,15 +28,22 @@ class DummyModel:
     config: any
   
 
-def get_llava_model(model_path=MODEL_PATH, keep_config_only=False) -> LocalLLaVaModel:
+def get_llava_model(model_path=MODEL_PATH, model_base=None, keep_config_only=False, device="cuda") -> LocalLLaVaModel:
     tokenizer, model, image_processor, context_len = load_pretrained_model(
         model_path=model_path,
-        model_base=None,
-        model_name=get_model_name_from_path(model_path)
+        model_base=model_base,
+        model_name=get_model_name_from_path(model_path),
+        device=device
     )
     if keep_config_only:
         import copy
-        model = DummyModel(config=copy.deepcopy(model.config))
+        model2 = DummyModel(config=copy.deepcopy(model.config))
+        del model
+        del tokenizer
+        del image_processor
+        model = model2
+        return LocalLLaVaModel(None, model_path, model, None, context_len)
+        
     return LocalLLaVaModel(tokenizer, model_path, model, image_processor, context_len)
   
 def infer_conv_mode(model_name):
@@ -68,7 +75,7 @@ def generate_prompt_llava(model_obj: LocalLLaVaModel, data: PatentData):
         else:
             inp = DEFAULT_IMAGE_TOKEN + '\n' + inp + data.text
         conv.append_message(conv.roles[0], inp)
-        data.image = None
+        # data.image = None
     elif mode == IMAGE_ONLY:
         if data.image is None:
             raise ValueError("Image must be provided for IMAGE_ONLY mode.")
@@ -77,7 +84,7 @@ def generate_prompt_llava(model_obj: LocalLLaVaModel, data: PatentData):
         else:
             inp = DEFAULT_IMAGE_TOKEN + '\n' + inp
         conv.append_message(conv.roles[0], inp)
-        data.image = None
+        # data.image = None
     elif mode == TEXT_ONLY:
         conv.append_message(conv.roles[0], inp + data.text)
     conv.append_message(conv.roles[1], None)
@@ -129,7 +136,7 @@ def uuid_to_folder_path(uuid:str):
     folder = os.path.join(temp_folder, uuid)
     return folder
 
-
+import uuid
 def to_json(data:PatentData, folder_path:str):
         # json should look like this:
         ## [
@@ -149,11 +156,12 @@ def to_json(data:PatentData, folder_path:str):
 #   }
     obj = {}
     # generate a uuid
-    uuid = str(uuid.uuid4())
-    obj["id"] = uuid
-    save_path = os.path.join(folder_path, uuid_to_folder_path(uuid) + ".jpg")
+    uuid_str = str(uuid.uuid4())
+    obj["id"] = uuid_str
+    save_path = os.path.join(folder_path, uuid_to_folder_path(uuid_str) + ".jpg")
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    data.image.save(save_path)
+    if data.image is not None: data.image.save(save_path)
+    else: print("Warning: No image found in data.")
     
     obj["image"] = save_path
     
@@ -168,5 +176,6 @@ def to_json(data:PatentData, folder_path:str):
         }
     ]
     obj["conversations"] = conversation
+    return obj
     
     

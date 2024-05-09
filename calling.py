@@ -14,8 +14,8 @@ from PIL import Image as PILImage
 from prompts import PatentData
 import json
 from openai import AzureOpenAI
-api_base = 'https://gerstein-westus.openai.azure.com/'
-api_key="b4521b5444d74d0284e9aa797245b25d"
+api_base = 'https://DEPLOYNAME.openai.azure.com/'
+api_key="YOUR_KEY_HERE"
 deployment_name = 'gpt4-vision-preview'
 api_version = '2023-12-01-preview'
 
@@ -31,7 +31,6 @@ def call_openai(data: PatentData, model=deployment_name, return_token_usage=Fals
     Returns:
         response: the response from the OpenAI API
     """
-    # messages = generate_prompt_openai(data)
     if data.messages is None:
         raise ValueError("PromptData object must have messages attribute set.")
     response = azure_client.chat.completions.create(
@@ -61,6 +60,7 @@ def call_gemini(data: PatentData):
 
 
 def concat_images(images):
+    """ Concatenates a list of PIL images horizontally. """
     if len(images) == 1:
         return images[0]
     if len(images) < 1:
@@ -86,6 +86,7 @@ boto3_client = boto3.client(
 )
 
 def call_anthropic(data: PatentData):
+    """ Calls the Anthropic Claude 3 Haiku model with the given data. """
     if data.messages is None:
         raise ValueError("PromptData object must have messages attribute set.")
 
@@ -107,12 +108,6 @@ def call_anthropic(data: PatentData):
         input_tokens = result["usage"]["input_tokens"]
         output_tokens = result["usage"]["output_tokens"]
         output_list = result.get("content", [])
-
-        # print("Invocation details:")
-        # print(f"- The input length is {input_tokens} tokens.")
-        # print(f"- The output length is {output_tokens} tokens.")
-
-        # print(f"- The model returned {len(output_list)} response(s):")
         res1 = ""
         for output in output_list:
             res1 += output["text"]
@@ -120,11 +115,6 @@ def call_anthropic(data: PatentData):
         return res1
     except ClientError as err:
         print(err)
-        # logger.error(
-        #     "Couldn't invoke Claude 3 Haiku. Here's why: %s: %s",
-        #     err.response["Error"]["Code"],
-        #     err.response["Error"]["Message"],
-        # )
         raise
 
 

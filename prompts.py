@@ -20,6 +20,11 @@ TEXT_ONLY = 1
 IMAGE_ONLY = 2
 @dataclass
 class PatentData:
+    """
+    This class is used to store the data for a single patent
+    Nearly every function in this module will use this class 
+    to interact with the patent data.
+    """
     text: str
     image: PILImage
     label: str
@@ -32,6 +37,9 @@ class PatentData:
 
     
 def load_image_from_url(url: str) -> PILImage:
+    """
+    Load an image from a URL.
+    """
     try:
         response = urllib.request.urlopen(url)
         image = PILImage.open(response)
@@ -41,7 +49,9 @@ def load_image_from_url(url: str) -> PILImage:
 
 def image_collage(images: List[str]) -> PILImage:
     """
-    Collage multiple images into a single image.
+    Collage multiple images into a single image, from a list of strings.
+    Returns:
+        PIL.Image: the collage of the images
     """
     # Load the images
     def load_image(image):
@@ -65,6 +75,10 @@ def to_patent_data(data,
                    mode = TEXT_IMAGE,
                    include_original_data=False
     ):
+    """
+    Convert a dictionary of data to a PatentData object.
+    Call this function using the original data from the feather file.
+    """
     # print(data["cpc_labels"])
     target = data["ipc_label"][:4]
     
@@ -104,6 +118,10 @@ def concat_images_dp(images):
     dp = [[0] * len(images) for _ in range(len(images))]
     
 def create_collage(image_list):
+    """
+    Create a collage from a list of images. This function will
+    resize the images such that each one fits in a grid
+    """
     # Find the number of images
     if len(image_list) == 0:
         # return empty 480 x 480 image
@@ -148,6 +166,12 @@ def create_collage(image_list):
 
 
 def concat_images(images):
+    """
+    Concatenate a list of images horizontally.
+    This is the same as creating a collage with only one row
+    
+    Note that this is the legacy version of the function, results in slightly worse performance
+    """
     if len(images) == 1:
         return images[0]
     if len(images) < 1:
@@ -168,7 +192,10 @@ def concat_images(images):
   
 
 def PIL_image_to_data_url(image, return_formatted=True, image_format="png"):
-    # Save the image to a temporary file io.BytesIO object
+    """
+    Save the image to a temporary file io.BytesIO object and encode it into a data URL
+    The data URL is returned as a string with the format "data:<mime_type>;base64,<base64_encoded_data>"
+    """
     temp_file = io.BytesIO()
     image.save(temp_file, format=image_format.upper())
     # Encode the image file into a data URL
@@ -179,6 +206,8 @@ def PIL_image_to_data_url(image, return_formatted=True, image_format="png"):
 
 def generate_prompt_openai(data: PatentData):
     """
+    Generate a prompt for the OpenAI model.
+    
     Returns:
         messages: list to use as input to client.chat.completions.create()
     Note that the data object is modified in place.
@@ -207,18 +236,25 @@ def generate_prompt_openai(data: PatentData):
 
     
 
-def generate_prompt_gemini(data: PatentData):
-    # warn if data.image is not a PIL image
-    if not isinstance(data.image, PILImage):
-        raise ValueError("data.image must be a PIL image")
-    messages = [
-        data.image, # note that PIL images are supported here somehow
-        "Classify the following patent into a class in the International Patent Classification system. Answer with the a 4-character IPC class.\n" + data.text
-    ]
-    data.messages = messages
-    return messages
+# def generate_prompt_gemini(data: PatentData):
+#     # warn if data.image is not a PIL image
+#     if not isinstance(data.image, PILImage):
+#         raise ValueError("data.image must be a PIL image")
+#     messages = [
+#         data.image, # note that PIL images are supported here somehow
+#         "Classify the following patent into a class in the International Patent Classification system. Answer with the a 4-character IPC class.\n" + data.text
+#     ]
+#     data.messages = messages
+#     return messages
 
 def generate_prompt_claude(data: PatentData):
+    """
+    Generate a prompt for the CLAUDE model.
+    
+    Returns:
+        messages: list to use as input to client.chat.completions.create()
+    Note that the data object is modified in place.
+    """
     
     mode = data.mode
     prompt_block = [{ 
